@@ -7,11 +7,6 @@ class Comet {
         this.size = size;
         this.totalDistance = 0;
         this.allowRender = true;
-
-        // Visual trail
-        this.trail = [];
-        this.maxTrailLength = 80;
-        this.lastVelocity = createVector(0, 0);
     }
 
     show(canShow) {
@@ -24,12 +19,6 @@ class Comet {
         this.speed = speed;
 
         this.totalDistance = calc_distance(this.target, this.startPosition);
-
-        // When starting a new moving leg of the journey, reset the tail
-        // so that the approach to each target looks similar.
-        if (this.speed > 0) {
-            this.trail = [this.position.copy()];
-        }
     }
 
     update() {
@@ -61,17 +50,6 @@ class Comet {
         }
 
         this.position.add(velocity);
-        this.lastVelocity = velocity.copy();
-
-        // Keep a short position history to render the tail.
-        // Only add new points when we actually move a bit, but the
-        // tail will continue to render even when velocity is very small.
-        if (velocity.mag() > 0.05) {
-            this.trail.push(this.position.copy());
-            if (this.trail.length > this.maxTrailLength) {
-                this.trail.shift();
-            }
-        }
 
         // Update size based on distance from first target
         this.updateSize();
@@ -105,12 +83,12 @@ class Comet {
 
         // Outer halo
         const haloSize = this.size * 2.6;
-        fill(255, 40);
+        fill(50);
         circle(this.position.x, this.position.y, haloSize);
 
         // Mid glow
         const glowSize = this.size * 1.8;
-        fill(255, 100);
+        fill(150);
         circle(this.position.x, this.position.y, glowSize);
 
         // Solid core
@@ -120,10 +98,24 @@ class Comet {
     }
 
     renderTail() {
-        if (this.trail.length < 2) return;
+        // Only render tail if comet is moving toward a target
+        if (this.speed <= 0 || this.totalDistance <= 0) {
+            return;
+        }
 
-        // Use journey distance (from start to current position) to
-        // control how prominent and long the tail is, independent of velocity.
+        // Calculate direction from comet to target
+        const toTarget = p5.Vector.sub(this.target, this.position);
+        const distance = toTarget.mag();
+        
+        // If already at target, don't render tail
+        if (distance < 0.01) {
+            return;
+        }
+
+        // Normalize direction and reverse it (tail points away from target, opposite to travel direction)
+        const direction = p5.Vector.mult(p5.Vector.normalize(toTarget), -1);
+
+        // Calculate journey progress (0 = at start, 1 = at target)
         const journeyTraveled = calc_distance(this.startPosition, this.position);
         let journeyProgress = 0;
         if (this.totalDistance && this.totalDistance > 0) {
@@ -131,42 +123,63 @@ class Comet {
         }
         journeyProgress = constrain(journeyProgress, 0, 1);
 
-        // Use more of the trail in the middle of the journey, less at start/end.
-        let effectiveLength = floor(
-            this.trail.length * (0.2 + 0.8 * journeyProgress)
+        // Tail size follows a bell curve: nothing at start, maximum in middle, nothing at end
+        // Using sin(progress * PI) creates a smooth curve that peaks at 0.5 (middle)
+        const tailSizeScale = min(1, sin(journeyProgress * PI) * 1.5);
+
+        // Tail properties - scaled by journey progress
+        const baseTailLength = this.size * 8; // Base tail length proportional to comet size
+        const baseTailStartWidth = this.size * 0.6; // Base width at base (near comet)
+        const tailLength = baseTailLength * tailSizeScale;
+        const tailStartWidth = baseTailStartWidth * tailSizeScale;
+        const tailEndWidth = this.size * 0.1 * tailSizeScale; // Width at tip
+
+        // Calculate tail start position (slightly offset from comet center, behind comet)
+        const tailStart = p5.Vector.add(
+            this.position,
+            p5.Vector.mult(direction, this.size * 0.5)
         );
-        effectiveLength = constrain(effectiveLength, 2, this.trail.length);
+        
+        // Calculate tail end position (extending away from target)
+        const tailEnd = p5.Vector.add(tailStart, p5.Vector.mult(direction, tailLength));
 
-        const startIndex = this.trail.length - effectiveLength;
-        const segmentCount = effectiveLength - 1;
+        // Draw tail as a gradient triangle/quad
+        noStroke();
+        
+        // Create perpendicular vector for tail width
+        const perpendicular = createVector(-direction.y, direction.x);
+        
+        // Calculate tail vertices
+        const startLeft = p5.Vector.add(tailStart, p5.Vector.mult(perpendicular, tailStartWidth / 2));
+        const startRight = p5.Vector.add(tailStart, p5.Vector.mult(perpendicular, -tailStartWidth / 2));
+        const endLeft = p5.Vector.add(tailEnd, p5.Vector.mult(perpendicular, tailEndWidth / 2));
+        const endRight = p5.Vector.add(tailEnd, p5.Vector.mult(perpendicular, -tailEndWidth / 2));
 
-        // Smooth overall fade-in and fade-out of the whole tail over the journey.
-        // Peaks around the middle of the path.
-        const journeyAlphaScale = 0.3 + 0.7 * sin(journeyProgress * PI);
-
-        stroke(255);
-        noFill();
-
-        // Slightly larger base weight for a thicker tail
-        const baseWeight = max(1.2, this.size * 0.28);
-        const maxAlpha = 140 * journeyAlphaScale;
-
-        // Walk trail from head (near comet) towards far tail
-        for (let i = this.trail.length - 1; i > startIndex; i--) {
-            const idxFromHead = this.trail.length - 1 - i; // 0 at head
-            const u = segmentCount > 0 ? idxFromHead / segmentCount : 0; // 0..1
-
-            // Fade smoothly from bright near the head to faint at the far tail.
-            const fade = (1 - u) * (1 - u); // quadratic for smoother falloff
-            const alpha = maxAlpha * fade;
-            const weight = baseWeight * (0.6 + 0.6 * fade);
-
-            stroke(255, alpha);
-            strokeWeight(weight);
-
-            const p1 = this.trail[i];
-            const p0 = this.trail[i - 1];
-            line(p1.x, p1.y, p0.x, p0.y);
+        // Draw tail with gradient fade
+        // Use multiple segments for smooth gradient
+        const segments = 20;
+        for (let i = 0; i < segments; i++) {
+            const t1 = i / segments;
+            const t2 = (i + 1) / segments;
+            
+            // Calculate positions along tail
+            const p1Left = p5.Vector.lerp(startLeft, endLeft, t1);
+            const p1Right = p5.Vector.lerp(startRight, endRight, t1);
+            const p2Left = p5.Vector.lerp(startLeft, endLeft, t2);
+            const p2Right = p5.Vector.lerp(startRight, endRight, t2);
+            
+            // Fade from bright at start to transparent at end
+            // Also scale by journey progress so tail fades at start and end of journey
+            const segmentFade = (1 - t1) * (1 - t1); // Quadratic fade along tail
+            const alpha = 255 * segmentFade * tailSizeScale;
+            
+            fill(255, alpha);
+            beginShape();
+            vertex(p1Left.x, p1Left.y);
+            vertex(p1Right.x, p1Right.y);
+            vertex(p2Right.x, p2Right.y);
+            vertex(p2Left.x, p2Left.y);
+            endShape(CLOSE);
         }
     }
 }
