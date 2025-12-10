@@ -47,7 +47,7 @@ class LoadingScreen {
             stageName = "Moving towards Earth";
         } else if (currentStage === 2) {
             timeRemaining = STAGE_CONFIG.stayAtFirstTarget - FRAMES_TO_SECONDS(elapsedFrames);
-            stageName = "Hovering around Earth";
+            stageName = "Comet will appear again in";
         } else if (currentStage === 3) {
             const distance = calc_distance(comet.position, secondTargetPosition);
             const speed = comet.speed;
@@ -55,6 +55,15 @@ class LoadingScreen {
                 timeRemaining = distance / speed / 60; // Convert frames to seconds
             }
             stageName = "Moving away";
+        }
+        
+        // Check if comet has reached the second target - if so, don't show notification
+        if (currentStage === 3) {
+            const distanceToSecondTarget = calc_distance(comet.position, secondTargetPosition);
+            if (distanceToSecondTarget < 1) {
+                // Comet has reached second target, don't render notification
+                return;
+            }
         }
         
         // Display countdown at bottom (relative to screen size)

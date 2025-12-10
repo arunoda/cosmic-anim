@@ -202,14 +202,14 @@ function startFromStage(stage, seconds = 0) {
         comet.speed = 0;
         comet.totalDistance = 0;
         comet.trail = [];
-        comet.show(true);
+        comet.show(false); // Hide comet at first target
         currentStage = 2;
         stageStartFrame = frameCount - framesOffset;
     } else if (stage === 3) {
         // Stage 3: Moving to second target
         comet.position = createVector(firstTargetPosition.x, firstTargetPosition.y);
         comet.startPosition = firstTargetPosition;
-        comet.show(true);
+        comet.show(true); // Show comet when moving to second target
         const speed = calc_distance(secondTargetPosition, comet.position) / SECONDS_TO_FRAMES(STAGE_CONFIG.timeToSecondTarget);
         comet.setTarget(secondTargetPosition, speed);
         currentStage = 3;
@@ -471,10 +471,11 @@ function updateStages() {
         // Stage 1: Moving to first target
         const distance = calc_distance(comet.position, firstTargetPosition);
         if (distance < 1) {
-            // Reached first target, start staying
+            // Reached first target, hide comet and start staying
             currentStage = 2;
             stageStartFrame = frameCount;
             comet.setTarget(firstTargetPosition, 0); // Stop moving
+            comet.show(false); // Hide comet when it reaches first target
         }
     } else if (currentStage === 2) {
         // Stage 2: Staying at first target
@@ -482,11 +483,17 @@ function updateStages() {
             // Start moving to second target
             currentStage = 3;
             stageStartFrame = frameCount;
+            comet.show(true); // Show comet again to start moving
             const speed = calc_distance(secondTargetPosition, comet.position) / SECONDS_TO_FRAMES(STAGE_CONFIG.timeToSecondTarget);
             comet.setTarget(secondTargetPosition, speed);
         }
     } else if (currentStage === 3) {
         // Stage 3: Moving to second target
-        // Just keep moving, no transition needed
+        const distance = calc_distance(comet.position, secondTargetPosition);
+        if (distance < 1) {
+            // Reached second target, hide comet
+            comet.setTarget(secondTargetPosition, 0); // Stop moving
+            comet.show(false); // Hide comet when it reaches second target
+        }
     }
 }
